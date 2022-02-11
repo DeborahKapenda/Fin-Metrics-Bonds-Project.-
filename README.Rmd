@@ -1,0 +1,655 @@
+---
+title: "README"
+author: "Deborah Kapenda"
+date: "01/02/2022"
+output: html_document
+---
+
+# Introduction and Purpose
+
+The South African bond markets return contain the yield to maturity rates. This is the annualised rate of return to an investor who buys the bond and holds it until maturity. This is a standard measure of the total rate of return. This rate is viewed as a measure of the average rate of return that will be earned on a bond if it is bought now and held until it matures.Bonds are the most well-known type of fixed income instruments. They are issued by governments or businesses and pay interest on a predetermined schedule. In contrast to equities, the majority of fixed income products, including bonds, trade rarely.
+
+The purpose of this document is to conduct an analysis of the South African bond market by investigating its volatility using the GARCH models. The project analyses the data and investigates the presence of conditional heteroskedasicity in the SA bond yields market. 
+
+```{r warning=FALSE}
+
+library(esquisse)
+#esquisser(mtcars)
+library(dplyr)
+library(ggplot2)
+
+# ============== Preamble to load packages ========================== #
+if(!require("devtools")){install_github("devtools")}
+library(devtools)
+# Install pacman to handle installations
+install_github("trinker/pacman")
+devtools::install_github("KevinKotze/tsm")
+
+# Install the required packages in elagant approach
+pacman::p_load(
+    "tidyverse",
+    "devtools",
+    "rugarch",
+    "forecast",
+    "tbl2xts",
+    "lubridate",
+    "PerformanceAnalytics",
+    "ggthemes",
+    "robustbase",
+    "tbl2xts",
+    "ggplot2",
+    "ggthemes",
+    "robustbase",
+    "fmxdat",
+    "extrafont",
+    "TTR",
+    "naniar",
+    "readr",
+    "dplyr",
+    "tidyr",
+    "rmsfuns",
+    "naniar",
+    "Texevier",
+    "reshape2",
+    "xts",
+    "readr",
+    "viridis",
+    "viridisLite",
+    "rugarch",
+    "quantmod",
+    "wesanderson",
+    "MTS",
+    "robustbase",
+    "rmgarch",
+    "forecast",
+    "fGarch",
+    "tsm",
+    "ccgarch",
+    "tseries",
+    "xlsx",
+    "gdata",
+    "readxl",
+    "xtable",
+    "knitr")
+```
+
+```{r}
+knitr::opts_chunk$set(out.height=400, out.width=800, fig.width=6, fig.height=3)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+# Data 
+
+```{r}
+SA_bonds <- read_rds("data/SA_Bonds.rds") # SA bond 2 year, 3 month and 10 year
+ZA_Infl <- read_rds("data/ZA_Infl.rds") # Inflation in South Africa (High inflation rate, leads to bond holders requiring higher  returns off bonds and thus )
+IV <- read_rds("data/IV.rds") # Volatility index
+usdzar <- read_rds("data/usdzar.rds") 
+```
+
+```{r}
+library(readxl)
+X2yr_bonds <- read_excel("data/2yr_bonds.xlsx", 
+    col_types = c("date", "numeric", "numeric", 
+        "numeric", "numeric",
+        "numeric"))
+View(X2yr_bonds)
+```
+
+```{r}
+library(readxl)
+X10yr_bonds <- read_excel("data/10yr_bonds.xlsx", 
+    col_types = c("date", "numeric", "numeric", 
+        "numeric", "numeric",
+        "numeric"))
+View(X10yr_bonds)
+```
+
+```{r}
+#library("writexl")
+#write_xlsx(ZA_Infl,"D:\\A FM Project Bonds\\INF.xlsx")
+```
+
+
+```{r}
+# transformation: reshape to plot
+#Change dataset into time series 
+xts.SA_bonds <- tbl_xts(SA_bonds)
+str(xts.SA_bonds)
+t1 <- head(xts.SA_bonds)
+tail(xts.SA_bonds)
+kable(t1, caption = "SA bond yield rates")
+```
+
+```{r}
+xts.2yr <- tbl_xts(X2yr_bonds)
+str(xts.2yr)
+head(xts.2yr)
+
+xts.10yr <- tbl_xts(X10yr_bonds)
+str(xts.10yr)
+head(xts.10yr)
+
+xts.IV <- tbl_xts(IV)
+xts.ZA_Infl <- tbl_xts(ZA_Infl)
+```
+
+## Visualise the data 
+
+The Yield of a bond represents the money lent. The higher the yield the higher the return on the investment. The graph above shows the yield curves for the 3 month, 2 year and 10 year maturity. A significant decline is seen during the 2008 financial crisis as well as during the 2020 as caused by the COVID-19 pandemic. However, one notices a rise on the mid and long term bonds, while the short term (3M) remains at a constant rate. Usually yields with close maturities are relatively close to each other and may move together in the same fashion as seen the diagram below.
+
+```{r}
+asset.names <- colnames(xts.SA_bonds)
+plot.xts(xts.SA_bonds, legend.loc = "topright", xlim = "bond yield", grid.col = "white", main = "South Africa's bond yields", ylab = "Bond Yields")
+```
+To compare the performance SA 2 Year bond yields to that of the US, UK, Brazil and Nigeria, the graph below shows this. 
+The US and UK bond market tend to move with each other, while Nigeria's bond yields are very high. 
+The graph indicates different volatility processes. 
+
+```{r}
+#Plot Bond yields of 2-year
+asset.names <- colnames(xts.2yr)
+plot.xts(xts.2yr, legend.loc = "topleft", xlim = "bond yield", grid.col = "white", main = "2-Year Bond yields", ylab = "Bond Yields")
+```
+A similar pattern is seen in the 10 year bond yields. 
+
+```{r}
+#Plot Bond yields of 10-year
+asset.names <- colnames(xts.10yr)
+plot.xts(xts.10yr, legend.loc = "topleft", xlim = "bond yield", grid.col = "white", main = "10-Year Bond yields", ylab = "Bond Yields")
+```
+
+Volatility index 
+
+
+```{r}
+p1 <- IV %>%
+ ggplot() +
+ aes(x = date, y = Price, colour = Name) +
+ geom_line(size = 0.5) +
+ scale_color_hue(direction = 1) +
+ labs(x = "Time (daily)", y = "Volatility index", subtitle = "Volatility index", caption = "VIX represents volatility index", 
+ color = "Index") +
+ theme_classic() +
+ theme(legend.position = "bottom")
+
+print(p1)
+
+```
+
+ZA Inflation rate
+
+
+```{r}
+plot.xts(xts.ZA_Infl, legend.loc = "topright", xlim = "bond yield", grid.col = "white", main = "SA inflation rate", ylab = "Inflation rate")
+```
+US AND ZAR Exchange rate 
+
+```{r}
+ggplot(usdzar) +
+  aes(x = date, y = Price, colour = Name) +
+  geom_line(size = 0.5) +
+  scale_color_viridis_d(option = "viridis", direction = 1) +
+  theme_classic()
+```
+
+
+
+
+
+# 1. SA Yield Spreads
+
+```{r}
+ggplot(data = SA_bonds, aes(x = date)) +
+  geom_line(aes(y =ZA_10Yr-SA_3M, colour = "SA_3M spread")) +
+  geom_line(aes(y =ZA_10Yr-ZA_2Yr, colour = "ZA_2Yr spread")) +
+  scale_colour_manual("", 
+                      breaks = c("SA_3M spread", "ZA_2Yr spread"),
+                      values = c("SA_3M spread"="green", "ZA_2Yr spread"="red")) +
+  xlab("Date") +
+  scale_y_continuous("Spreads") + 
+  labs(title="SA Yield Spreads",
+       subtitle = "Yield spreads relative to ZA_10Yr") + theme_classic()
+```
+
+
+# 2. Volatility
+
+The annualised volatility and the yields move in a similar shape. The volatility calculation changes reduces the rate.
+
+## Annualized volatility SA bonds
+
+```{r}
+#annualized volatility 
+annual_vol <- sqrt(xts.SA_bonds) * sd(xts.SA_bonds)
+head(annual_vol)
+head(xts.SA_bonds)
+```
+
+```{r}
+plot.xts(annual_vol, legend.loc = "topright", ylab = "Annualised volatility rate", grid.col = "white", main = "Annualized Volatility SA bonds")
+asset.names <- colnames(xts.SA_bonds)
+plot.xts(xts.SA_bonds, legend.loc = "topright", ylab = "bond yield", grid.col = "white", main = "SA bond yields")
+```
+
+## The rolling 1 and 3 month estimate of the annualised volatility
+
+This is a visual of the time-variation in volatility. The assumption made here is that the number of trading days in a year equals to 252 days.
+
+```{r}
+# Compute the rolling 1 month estimate of annualized volatility
+chart.RollingPerformance(R = xts.SA_bonds, width = 22,
+     FUN = "sd.annualized", scale = 252, main = "One month rolling volatility")  
+
+# Compute the rolling 3 months estimate of annualized volatility
+chart.RollingPerformance(R = xts.SA_bonds, width = 66,
+     FUN = "sd.annualized", scale = 252, main = "Three months rolling volatility", legend.loc = "topright")
+```
+
+## Predictive errors 
+
+Calculation of the GARCH variance. We need the prediction errors.
+
+Then a calculation of the positive autocorrelation can reflect the presence of volatility clusters. When this is above average, the value is above average.
+
+```{r}
+#Prediction errors
+m <- mean(xts.SA_bonds)
+# series of prediction errors
+e <- xts.SA_bonds - m
+```
+
+The plot of the absolute value of the prediction errors
+
+```{r}
+par(mfrow = c(1,1), mar = c(3,2,2,2))
+plot(abs(e), main = "The absolute value of the prediction errors", legend.loc = "topright", xlim = "bond yield", grid.col = "white" )
+```
+
+The plot for the absolute prediction errors.
+
+```{r}
+acf(abs(e))
+```
+## Estimated Volatility and Residuals 
+
+## ZA_3M
+
+```{r}
+spec <- ugarchspec(distribution.model = "sstd")
+fit_3M <- ugarchfit(xts.SA_bonds$SA_3M, spec = spec)
+# Save the volatilities and the rescaled residuals
+Volatilities_3M <- sigma(fit_3M)
+Residuals_3M <- scale(residuals(fit_3M, standardize = TRUE)) * sd(xts.SA_bonds$SA_3M) + mean(xts.SA_bonds$SA_3M)
+
+```
+
+```{r}
+# Plot the yield changes with the estimated volatilities and residuals
+merge_1 <- merge.xts(xts.SA_bonds$SA_3M, Volatilities_3M, Residuals_3M)
+plot.xts(merge_1, main = "Estimated volatilities and residuals for ZA_3M", legend.loc = "topright", grid.col = "white", width = 20)
+```
+
+## ZA_2Yr
+
+```{r}
+spec <- ugarchspec(distribution.model = "norm")
+fit_2Yr <- ugarchfit(xts.SA_bonds$ZA_2Yr, spec = spec)
+# Save the volatilities and the rescaled residuals
+volatilities_2Yr <- sigma(fit_2Yr)
+residuals_2Yr <- scale(residuals(fit_2Yr, standardize = TRUE)) * sd(xts.SA_bonds$ZA_2Yr) + mean(xts.SA_bonds$ZA_2Yr)
+
+```
+
+```{r}
+# Plot the yield changes with the estimated volatilities and residuals
+merge_2 <- merge.xts(xts.SA_bonds$SA_3M, volatilities_2Yr, residuals_2Yr)
+plot.xts(merge_2, main = "Estimated volatilities and residuals for ZA_2YR", legend.loc = "topright", xlim = "bond yield", grid.col = "white", width = 20 )
+```
+
+## ZA 10Yr
+
+```{r}
+spec <- ugarchspec(distribution.model = "norm")
+fit_10Yr <- ugarchfit(xts.SA_bonds$ZA_10Yr, spec = spec)
+# Save the volatilities and the rescaled residuals
+volatilities_10Yr <- sigma(fit_2Yr)
+residuals_10Yr <- scale(residuals(fit_10Yr, standardize = TRUE)) * sd(xts.SA_bonds$ZA_10Yr) + mean(xts.SA_bonds$ZA_10Yr)
+```
+
+```{r}
+# Plot the yield changes with the estimated volatilities and residuals
+merge_3 <- merge.xts(xts.SA_bonds$ZA_10Yr, volatilities_10Yr, residuals_10Yr)
+plot.xts(merge_3, main = "Estimated volatilities and residuals for ZA_10YR", legend.loc = "topright", xlim = "bond yield", grid.col = "white", width = 20)
+```
+
+# 3. Differentiated SA bond yields
+
+A calculation of the yield levels through "differentiation" allows us to make the time series independent of time.  
+
+```{r}
+# differentiate the time series 
+xts.SA_bonds_diff <- diff.xts(xts.SA_bonds)
+#Remove NA variable 
+xts.SA_bonds_diff <- xts.SA_bonds_diff[-c(1),]
+head(xts.SA_bonds_diff)
+```
+## SA Yield changes 
+
+```{r}
+Yield.changes  <- xts.SA_bonds_diff
+plot.type  <- "single"
+plot.type1  <- "multiple"
+asset.names <- colnames(xts.SA_bonds_diff)
+#Plot SA.bonds 
+plot.zoo(x = Yield.changes, plot.type = plot.type, xlab = "Date", col = rainbow(3), main = "South Africa's change in bond yields")  
+legend(x = "topright", legend = asset.names, cex = 0.45, lwd = 3, col = rainbow(3))
+plot.zoo(x = Yield.changes, plot.type = plot.type1, xlab = "Date", col = rainbow(3), main = "South Africa's change in bond yields")  
+legend(x = "topright", legend = asset.names, cex = 0.45, lwd = 3, col = rainbow(3))
+```
+
+## Test for autocorrelation
+
+The graphs above show the yield changes in the bond. The graph shows the direction (positive or negative) is independent of the the previous days returns. The magnitude of the return is similar to the previous day's return. Showing that during a volatile market or crisis the expected return will be similar to a turbulent tomorrow
+
+To show this statistically one can measure autocorrelation which is used to show how the past depends on the future of a time series. 
+
+If the autocorrelation is close to 1, the next day's value is close to today's value, however, if it is close to 0 the next days value is unaffected by today's value. 
+
+
+```{r fig.width=6,fig.height=2}
+# Plot the autocorrelations of the yield changes
+par(mfrow=c(1,3))
+acf_3M <- acf(xts.SA_bonds$SA_3M, na.action = na.pass)
+acf_2Yr <- acf(xts.SA_bonds$ZA_2Yr, na.action = na.pass)
+acf_10Yr <- acf(xts.SA_bonds$ZA_10Yr, na.action = na.pass)
+mtext("Autocorrelation for 3M, 2Yr, 10Yr bond yield changes respectively", side = 3, line = -32, outer = TRUE)
+```
+
+The Autocorrelation figure shows each spike that rises above or falls below the dashed lines is considered to be statistically significant. This means the spike has a value that is significantly different from zero. If a spike is significantly different from zero, that is evidence of autocorrelation. A spike that's close to zero is evidence against autocorrelation.
+
+The figure shows that most of the spikes are not statistically significant. This indicates that the yields are not highly correlated. The values are close to 0 and therefore the next day's yields will be unaffected by today's yields.  
+
+The ARCH effects test of conditional heteroskedasticity. 
+
+```{r}
+Box.test(coredata(xts.SA_bonds$SA_3M), type = "Ljung-Box", lag = 12)
+Box.test(coredata(xts.SA_bonds$ZA_2Yr), type = "Ljung-Box", lag = 12)
+Box.test(coredata(xts.SA_bonds$ZA_10Yr), type = "Ljung-Box", lag = 12)
+```
+
+The test rejects the nulls of no ARCH effects -  there is need to account for the remaining conditional heteroskedasticity in the series. 
+
+
+
+# 4. GARCH model 
+
+The GARCH - A Generalized AutoRegressive Conditional Heteroskedasticity model is a tool used to handle changing volatility in financial time series data. 
+The equation below shows the popular GARCH form that shows the volatility process. 
+In words the equation means the "the current volatility $$ \sigma^2 $$ is equal to the last day's volatility $$ \sigma^2_{t-1} $$ and the last day's return $$ \epsilon^2_{t-1} $$, with estimated parameters  $$ w,\alpha,\beta $$
+
+$$
+\sigma^2 = w + \alpha (\epsilon^2_{t-1} )    +    (\beta)  \sigma^2_{t-1}
+
+$$
+
+
+## GARCH model specification  
+
+This is a standard GARCH, (1,1) does a good job of dealing with second order persistence. 
+
+```{r}
+# Note specify the mean (mu) and variance (sigma) models separately:
+garch11 <-  ugarchspec(
+    
+    variance.model = list(model = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1], 
+                          
+    garchOrder = c(1, 1)), 
+    
+    mean.model = list(armaOrder = c(1, 0), include.mean = TRUE), 
+    
+    distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1])
+```
+
+## 3 Month SA bond yields 
+```{r}
+garchfit1 = ugarchfit(spec = garch11, data = xts.SA_bonds$SA_3M) 
+garchfit1
+```
+
+```{r echo =  FALSE, results='asis'} 
+# Model coefficients.
+garchfit1@fit$matcoef 
+kable(garchfit1@fit$matcoef, caption = "Model coefficients 3Month")
+```
+
+The Weighted ARCH LM tests shows a high p-value, we do not reject the null hypothesis of no autocorrelation. 
+
+```{r}
+infocriteria(garchfit1)
+```
+
+```{r fig.width=6,fig.height=3}
+par(mar=c(1,1,1,1))
+plot(garchfit1, which = "all")
+```
+
+Conditional Variance 
+```{r}
+sigma <- sigma(garchfit1) %>% xts_tbl()
+colnames(sigma) <- c("date", "sigma")
+sigma <- sigma %>% mutate(date = as.Date(date))
+```
+
+The conditional variance plot
+
+
+```{r}
+ggplot(sigma) +
+ aes(x = date, y = sigma) +
+ geom_line(size = 0.5, colour = "#EF562D") +
+ labs(x = "Date", 
+ y = "Volatility", title = "Sigma from GARCH 3M Bond") +
+ theme_classic()
+```
+The red line is the actual volatility representation. 
+
+
+
+
+
+## 2 Year SA bond yields 
+```{r}
+garchfit2 = ugarchfit(spec = garch11, data = xts.SA_bonds$ZA_2Yr) 
+garchfit2
+```
+
+```{r}
+#slotNames(garchfit1)
+#names(garchfit1@fit)
+#names(garchfit1@model)
+
+# Use it now as follows:
+garchfit2@fit$matcoef # Model coefficients.
+```
+
+```{r}
+infocriteria(garchfit2)
+```
+
+```{r fig.width=6,fig.height=3}
+par(mar=c(1,1,1,1))
+plot(garchfit2, which = "all")
+```
+## 10 Year SA bond yields 
+```{r}
+garchfit3 = ugarchfit(spec = garch11, data = xts.SA_bonds$ZA_2Yr) 
+garchfit3
+```
+
+```{r}
+#slotNames(garchfit1)
+#names(garchfit1@fit)
+#names(garchfit1@model)
+
+# Use it now as follows:
+garchfit3@fit$matcoef  # Model coefficients.
+```
+
+```{r}
+infocriteria(garchfit3)
+```
+
+```{r  fig.height=4, fig.width=10}
+plot(garchfit3, which = "all")
+```
+
+# 5. Multivariate GARCH model
+
+## Model setup
+
+```{r}
+#estimate these univariate GARCH models using AR(1) GARCH(1,1) model and replicate the model 3 times because we have 3 year to maturity bonds. 
+uspec.n <- multispec(replicate(3, garch11))
+```
+
+```{r }
+#Estimate the univariate GARCH models using multifit command 
+multf <- multifit(uspec.n, xts.SA_bonds)
+multf
+```
+
+
+## Specification of the DCC model
+
+```{r}
+#This models the univariate volatilities as per uspec.n and the complex dynamic structure of the correlation matrix of dccorder c(1,1)
+spec1 <- dccspec(uspec = uspec.n, dccOrder = c(1, 1), distribution = 'mvnorm')
+```
+
+## Model Estimation
+
+```{r}
+fit1 <-  dccfit(spec1, data = xts.SA_bonds, fit.control = list(eval.se =TRUE), fit = multf)
+fit1 
+```
+
+## Model based time varying covariance and correlation matrices
+
+```{r}
+covariance1 <- rcov(fit1)
+dim(covariance1)
+correlation1 <- rcor(fit1)
+dim(correlation1)
+```
+
+This is a three dimensional object, the two dimensions have 3 elements each and the third as 5715 elements. This means that 5715 of data is stored in a 3x3 matrix.
+
+A view of the matrix for the last day
+
+```{r}
+covariance1[,,dim(covariance1)[3]]
+```
+
+```{r}
+correlation1[,,dim(correlation1)[3]]
+```
+
+### Plot of the three correlations between the three bond yields:
+
+```{r  fig.height=4, fig.width=10}
+
+par(mfrow=c(3,1))  # this creates a frame with 3 windows to be filled by plots
+plot(as.xts(correlation1[1,2,]),main="SA_3M and ZA_10Yr")
+plot(as.xts(correlation1[1,3,]),main="SA_3M and ZA_2Yr")
+plot(as.xts(correlation1[2,3,]),main="ZA_10Yr and ZA_2Yr")
+```
+
+### Covariance
+
+```{r  fig.height=4, fig.width=10}
+
+par(mfrow=c(3,1))  # this creates a frame with 3 windows to be filled by plots
+plot(as.xts(covariance1[1,2,]),main="SA_3M and ZA_10Yr")
+plot(as.xts(covariance1[1,3,]),main="SA_3M and ZA_2Yr")
+plot(as.xts(covariance1[2,3,]),main="ZA_10Yr and ZA_2Yr")
+```
+
+### Forecasts
+
+```{r}
+#Use the estimated model to produce forecats for the covariance or correlation matrix
+dccf1 <- dccforecast(fit1, n.ahead = 10)
+dccf1
+```
+
+## Correlation forecast
+
+```{r}
+Rf <- dccf1@mforecast$R
+```
+
+```{r}
+corf_310 <- Rf[[1]][1,2,]  # Correlation forecasts between SA_3M and ZA_10Yr
+corf_32 <- Rf[[1]][1,3,]  # Correlation forecasts between SA_3M and ZA_2Yr
+corf_102 <- Rf[[1]][2,3,]  # Correlation forecasts between ZA_10Yr and ZA_2Yr
+```
+
+```{r  fig.height=4, fig.width=10}
+
+par(mfrow=c(3,1))  # this creates a frame with 3 windows to be filled by plots
+c_310 <- c(tail(correlation1[1,2,],20),rep(NA,10))  # gets the last 20 correlation observations
+cf_310 <- c(rep(NA,20),corf_310) # gets the 10 forecasts
+plot(c_310,type = "l",main="Correlation SA_3M and ZA_10Yr")
+lines(cf_310,type = "l", col = "blue")
+
+c_32 <- c(tail(correlation1[1,3,],20),rep(NA,10))  # gets the last 20 correlation observations
+cf_32 <- c(rep(NA,20),corf_32) # gets the 10 forecasts
+plot(c_32,type = "l",main="Correlation SA_3M and ZA_2Yr")
+lines(cf_32,type = "l", col = "blue")
+
+c_102 <- c(tail(correlation1[2,3,],20),rep(NA,10))  # gets the last 20 correlation observations
+cf_102 <- c(rep(NA,20),corf_102) # gets the 10 forecasts
+plot(c_102,type = "l",main="Correlation ZA_10Yr and ZA_2Yr")
+lines(cf_102,type = "l", col = "blue")
+```
+
+
+DCC Forecast
+
+```{r}
+#Use the estimated model to produce forecast for the covariance or correlation matrix
+dccf1 <- dccforecast(fit1, n.ahead = 10)
+```
+```{r cc3, fig.align='center', fig.cap="Figure 25 DCC Series Unconditional Forecast \\label{cc3}", fig.height=5, fig.width=7}
+plot(dccf1, which=1, main = "DCC")
+```
+```{r cc4, fig.align='center', fig.cap="Figure 26 DCC Sigma Unconditional Forecast \\label{cc4}", fig.height=5, fig.width=7}
+plot(dccf1, which=2, size = 400, ax.lab = 1.9, 
+     cex.axes = 1, cex.main = 0.05, cex.sub = 2)
+```
+```{r cc5, fig.align='center', fig.cap="Figure 27 DCC Unconditional Covariance Forecast \\label{cc5}", fig.height=4, fig.width=10}
+plot(dccf1, which=3, cex.main = 0.05)
+```
+```{r cc6, fig.align='center', fig.cap="Figure 28 EW Forecast Portfolio with Unconditional limits \\label{cc6}", fig.height=4, fig.width=10}
+plot(dccf1, which= 5, main = "DCC ")
+```
+```{r cc9, fig.align='center', fig.cap="Figure 31 DCC Conditional Covariance \\label{cc9}", fig.height=3.7, fig.width=8}
+plot(fit1, which=3, series=c(1,2))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

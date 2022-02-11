@@ -1,0 +1,973 @@
+---
+title: 'Assessing the volatility within the South African bond markets, using GARCH
+  modelling'
+documentclass: elsarticle
+Author1: Deborah Kapenda
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    keep_tex: yes
+    template: Tex/TexDefault.txt
+    fig_width: 3.5
+    fig_height: 3.5
+    include:
+      in_header: Tex/packages.txt
+Email1: deborahkapenda1\@gmail.com
+keywords: Multivariate DCC-GARCH \sep South African bonds \sep Volatility \sep Bond
+  markets
+JELCodes: L250 \sep L100
+BottomRFooter: \footnotesize Page \thepage\
+addtoprule: yes
+addfootrule: yes
+margin: 2.3
+bottom: 2
+top: 2.5
+linenumbers: no
+AddTitle: yes
+HardSet_layout: yes
+bibliography: Tex/ref.bib
+RemovePreprintSubmittedTo: yes
+Journal: Journal of Finance
+toc: no
+numbersections: yes
+fontsize: 11pt
+linestretch: 1.2
+link-citations: yes
+Ref1: Department of Economics, Stellenbosch University, South Africa
+abstract: "This article examines the volatility of the South African bond market. The article illustrates the various methods for measuring volatility by implementing the GARCH and DCC-GARCH models. The article concludes that short- to medium-term SA bonds are more volatile than long-term bonds. Bond yields in developing countries are often higher than those in developed economies. This might be a result of excessive repayment costs, stagnant economic development, and ineffective fiscal and monetary policy execution. In general, bond markets are critical for developing countries because they offer a source of revenue while also allowing the Reserve Bank to exert control over the money supply and consumer demand. Additionally, variables affecting bond market volatility include inflation, currency exchange rates, and economic development. However, modeling the noise is challenging due to the existence of other variables affecting bond yields. The article concludes that the GARCH and DCC-GARCH models are effective in removing noise from volatility presentation. Additionally, the 10-year bond yield exhibits consistency in its returns, corroborating the literature's assertion that short- to medium-term rates are more volatile. Additional study should include a comparison of volatility to that of other developed countries and an analysis of the effect of exchange rate and inflation volatility on bond rates." 
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
+knitr::raw_latex("here all your tex content") 
+```
+
+```{r include=FALSE}
+library(esquisse)
+#esquisser(mtcars)
+library(dplyr)
+library(ggplot2)
+
+# ============== Preamble to load packages ========================== #
+if(!require("devtools")){install_github("devtools")}
+library(devtools)
+# Install pacman to handle installations
+install_github("trinker/pacman")
+devtools::install_github("KevinKotze/tsm")
+
+# Install the required packages in elagant approach
+pacman::p_load(
+    "tidyverse",
+    "devtools",
+    "rugarch",
+    "forecast",
+    "tbl2xts",
+    "lubridate",
+    "PerformanceAnalytics",
+    "ggthemes",
+    "robustbase",
+    "tbl2xts",
+    "ggplot2",
+    "ggthemes",
+    "robustbase",
+    "fmxdat",
+    "extrafont",
+    "TTR",
+    "naniar",
+    "readr",
+    "dplyr",
+    "tidyr",
+    "rmsfuns",
+    "naniar",
+    "Texevier",
+    "reshape2",
+    "xts",
+    "readr",
+    "viridis",
+    "viridisLite",
+    "rugarch",
+    "quantmod",
+    "wesanderson",
+    "MTS",
+    "robustbase",
+    "rmgarch",
+    "forecast",
+    "fGarch",
+    "tsm",
+    "ccgarch",
+    "tseries",
+    "xlsx",
+    "gdata",
+    "readxl",
+    "xtable",
+    "knitr",
+    "xfun")
+
+# ---------------------------------------------Data---------------------------------
+SA_bonds <- read_rds("data/SA_Bonds.rds") # SA bond 2 year, 3 month and 10 year
+ZA_Infl <- read_rds("data/ZA_Infl.rds") # Inflation in South Africa (High inflation rate, leads to bond holders requiring higher  returns off bonds and thus )
+IV <- read_rds("data/IV.rds") # Volatility index
+usdzar <- read_rds("data/usdzar.rds") 
+
+library(readxl)
+X2yr_bonds <- read_excel("data/2yr_bonds.xlsx", 
+    col_types = c("date", "numeric", "numeric", 
+        "numeric", "numeric",
+        "numeric"))
+View(X2yr_bonds)
+
+
+
+library(readxl)
+X10yr_bonds <- read_excel("data/10yr_bonds.xlsx", 
+    col_types = c("date", "numeric", "numeric", 
+        "numeric", "numeric",
+        "numeric"))
+View(X10yr_bonds)
+
+# transformation: reshape to plot
+#Change dataset into time series 
+xts.SA_bonds <- tbl_xts(SA_bonds)
+str(xts.SA_bonds)
+head(xts.SA_bonds)
+tail(xts.SA_bonds)
+
+xts.2yr <- tbl_xts(X2yr_bonds)
+str(xts.2yr)
+head(xts.2yr)
+
+xts.10yr <- tbl_xts(X10yr_bonds)
+str(xts.10yr)
+head(xts.10yr)
+
+xts.IV <- tbl_xts(IV)
+xts.ZA_Infl <- tbl_xts(ZA_Infl)
+
+```
+
+```{r include=FALSE}
+install.packages("sjPlot", dependencies = T)
+```
+
+<!-- ############################## -->
+
+<!-- # Start Writing here: -->
+
+<!-- ############################## -->
+
+# [**Introduction**]{.ul} \label{Introduction}
+
+A government bond is a debt-based investment in which people acquire the
+bonds in exchange for a loan from the government. The exchange
+represents a guaranteed investment at a predetermined rate of return.
+These bonds are used by the government to pay off debt and fund projects
+@meyer2020analysis. Numerous factors influence the yield rate. Firstly,
+supply and demand in the bond market --- investors want low-risk,
+high-return bonds. Secondly, interest rates' movement and level; a high
+interest rate above the bond yield results in poor demand for the bond.
+Thirdly, credit ratings; although bonds are low-risk investments,
+governments may fail, resulting in a credit deterioration. The primary
+objective of the South African (SA) bond market is to provide financing
+for development projects and debt reduction. Access to global financial
+markets, government risk levels, and currency rate volatility all
+contribute to the market's development. These variables are heavily
+impacted by how the foreign community views the country's economy. It is
+critical for the country's bond market to be efficient since it offers
+an extra source of revenue and reduces the economy's need for money. In
+times of economic expansion, inflation may rise, prompting the central
+bank to raise interest rates, resulting in higher bond yields. Investors
+want greater yields before investing as a consequence of the pressure
+exerted on the bond market by rising inflation rates.
+
+Reasons for the research include the fact that the SA market is
+appealing since it serves as a proxy for emerging nations and accounts
+for a significant portion of the market. The paper is important because
+it looks into the volatility in the South African bond market, which
+could help policy-makers stabilize the economy, governance, and politics
+to keep the bond market stable. The bond market is critical for funding
+debt and infrastructure development; a healthy bond market allows fiscal
+and monetary expansion. Therefore the study is significant as literature
+has shown a direct relationship between changes in bond market yields
+and economic growth. As well as the relationship between bond market
+yields, effective governance, and interest rates.
+
+In light of the above, the primary objective of this paper is to analyse
+SA's bond market volatility, placing focus on its 3 month, 2 year and 10
+year bond yields respectively.
+
+In summarising the main findings of this paper:
+
+-   The data shows a virtual relationship between the SA bond yields,
+    the inflation rate, volatility index and the exchange rate. This is
+    in line with literature.
+-   The period of the 2000s, the aftermath of the dot.com bubble, the
+    financial crisis 2007/8 and the 2019 pandemic, contain the highest
+    rate of volatility.
+-   The GARCH and DCC-GARCH account for the noise in volatility.
+
+The rest of the paper is structured as follows. The data section
+provides a description of the dataset used in this paper. Thereafter,
+the structure and rationale related to the application of the GARCH and
+the DCC-GARCH framework in volatility analysis is discussed throughout
+the section Methodology section. The empirical findings from the model
+are discussed in the preceding sections, before presenting concluding
+remarks.
+
+# [**Data**]{.ul}\label{Data}
+
+The paper uses SA bond market yields, as shown in figure 1, for 1999 to
+2021. SA inflation prices are presented in Figure 2. The higher the
+inflation rate, results in the increased demand for higher returns. The
+pressure placed on the bond market due to an increase in inflation
+results in investors demanding higher yields before they invest.
+Additionally, the figure depicts that SA bond yields move relative to
+inflation. Periods of high inflation prices resulted in a spike in the
+bond yields. A consistent inflation price resulted in consistent bond
+yields from 2020 until 2019.
+
+The volatility index created by the Chicago Board of Options Exchange
+(CBOE) tracks the volatility of S&P 500 Index options (VIX), and the
+VXEEM tracks the emerging Markets ETF volatility (Figure 3). The
+volatility indices show that they tend to outperform estimates of future
+realised volatility and the collection of GARCH volatility models
+\@{fernandes2014modeling. The index indicates periods of high volatility
+during the global financial crisis and the COVID-19 pandemic. These
+periods *correlate* to the performance in the inflation prices (Figure
+2) and the bond yields (Figure 1). In other words, the graphs indicate a
+movement in a similar pattern.
+
+Lastly, the US and SA exchange rates are shown in Figure 4. Meyer (2020)
+explains that the worsening volatility of African countries' exchange
+rates has contributed adversely to bond yields. His paper finds that the
+exchange rate volatility is one of the limiting factors of the economy's
+bond market as it discourages foreign investment into the market
+@meyer2020analysis. The figure shows that high/spikes of the exchange
+rate in the early 2000s, 2010s and 2019 are similar to that represented
+in the volatility index and inflation prices.
+
+```{r yields, fig.align='center', fig.cap="Figure 1 South African bond yields  \\label{yields}", fig.height=3.7, fig.width=7}
+asset.names <- colnames(xts.SA_bonds)
+plot.xts(xts.SA_bonds, legend.loc = "topright", xlim = "bond yield", grid.col = "white", main = "South Africa's bond yields", ylab = "Bond Yields")
+```
+
+```{r inf, fig.align='center', fig.cap="Figure 2 South African inflation prices  \\label{yields}", fig.height=3.7, fig.width=7}
+plot.xts(xts.ZA_Infl, legend.loc = "topright", xlim = "bond yield", grid.col = "white", main = "SA inflation prices", ylab = "Inflation rate")
+```
+
+```{r iv, fig.align='center', fig.cap="Figure 3 Volatility index  \\label{yields}", fig.height=3.7, fig.width=7}
+p1 <- IV %>%
+ ggplot() +
+ aes(x = date, y = Price, colour = Name) +
+ geom_line(size = 0.5) +
+ scale_color_hue(direction = 1) +
+ labs(x = "Time (daily)", y = "Volatility index", subtitle = "Volatility index", caption = "VIX represents volatility index", 
+ color = "Index") +
+ theme_classic() +
+ theme(legend.position = "bottom")
+
+print(p1)
+```
+
+```{r uz, fig.align='center', fig.cap="Figure 4 ZAR and USD exchange rate  \\label{uz}", fig.height=3.7, fig.width=7}
+ggplot(usdzar) +
+  aes(x = date, y = Price, colour = Name) +
+  geom_line(size = 0.5) +
+  scale_color_viridis_d(option = "viridis", direction = 1) +
+  theme_economist_white()
+```
+
+### Bond yields
+
+The yield of a bond represents the money lent. The higher the yield, the
+higher the return on the investment. Figure 1 shows SA bond yields for
+the 3 months, 2 year and 10 year maturity. A significant decline is seen
+during 2008 financial crisis as well as during 2020 as caused by the
+COVID-19 pandemic. However, one notices a rise in the mid and long term
+bonds, while the short term (3M) remains at a constant rate. Usually,
+yields with relative maturities move relatively close and may move
+together in the same fashion as seen in the diagram.
+
+To compare the performance of SA 2 Year bond yields to that of the US,
+UK, Brazil and Nigeria, Figure 5 below shows this. The US and UK bond
+market tend to move with each other, while Nigeria's bond yields are
+very high. In other words, the mid-term bond rate, the 2-year bond
+yield, shows South African yields higher than the United States (US),
+United Kingdom (UK) and Brazil. Nigeria has significantly higher yields.
+The graph shows that developed countries, the UK and the US, have lower
+bond yields than Nigeria, SA, and Brazil. Higher yields in developing
+countries may lead to higher costs on loans as the country may have
+higher risk ratings.
+
+The graph indicates different volatility processes. A similar pattern is
+seen in the 10-year bond yields (Figure 6). The bond spread is seen in
+Figure 7, bond spreads show the difference in the 3 month and 2-year
+bond yields with the 10-year bond yield as the benchmark. A spread is
+used to calculate the value of one bond to another. It is the reflection
+of the relative risk of the bonds. Figure 7 indicates rising bond
+spreads from 2020, which might mean that bonds are riskier than usual.
+One notices that the spread moves in a similar pattern since the terms
+are similar (3M and 2Yr) and are affected by the general changes in the
+economy.
+
+```{r 2y, fig.align='center', fig.cap="Figure 5 South African bond yields  \\label{2y}", fig.height=3.7, fig.width=7}
+#Plot Bond yields of 2-year
+asset.names <- colnames(xts.2yr)
+plot.xts(xts.2yr, legend.loc = "topleft", xlim = "bond yield", grid.col = "white", main = "2-Year Bond yields", ylab = "Bond Yields")
+```
+
+```{r 10y, fig.align='center', fig.cap=" Figure 6 South African bond yields  \\label{10y}", fig.height=3.7, fig.width=7}
+#Plot Bond yields of 10-year
+asset.names <- colnames(xts.10yr)
+plot.xts(xts.10yr, legend.loc = "topleft", xlim = "bond yield", grid.col = "white", main = "10-Year Bond yields", ylab = "Bond Yields")
+```
+
+```{r spread, fig.align='center', fig.cap="Figure 7 SA Yield Spreads \\label{spread}", fig.height=3.7, fig.width=7}
+ggplot(data = SA_bonds, aes(x = date)) +
+  geom_line(aes(y =ZA_10Yr-SA_3M, colour = "SA_3M spread")) +
+  geom_line(aes(y =ZA_10Yr-ZA_2Yr, colour = "ZA_2Yr spread")) +
+  scale_colour_manual("", 
+                      breaks = c("SA_3M spread", "ZA_2Yr spread"),
+                      values = c("SA_3M spread"="green", "ZA_2Yr spread"="red")) +
+  xlab("Date") +
+  scale_y_continuous("Spreads") + 
+  labs(title="SA Yield Spreads",
+       subtitle = "Yield spreads relative to ZA_10Yr") + theme_economist_white()
+```
+
+# [**Methodology** \label{Methodology}]{.ul}
+
+The GARCH model extends the (ARCH) Autoregressive Conditional
+Heteroskedasticity model. The GARCH model allows the variance to depend
+on its lags and squared residuals. The GARCH model cares for
+heteroscedasticity as a variance to be modelled. Heteroscedasticity is
+the presence of non-constant variance, which financial time series
+contain. The issues that arise when modelling volatility needs to be
+done as the most common method, the Ordinary Least Squares (OLS), may
+lead to misleading conclusions. Hence, the effectiveness of the GARCH
+model is that it accounts for heteroscedasticity, which corrects the
+shortcomings of the OLS model. Therefore, GARCH modelling is an
+essential element used to model volatility. However, one critic is that
+it models conditional variance as a linear function of the squared past
+values where a positive shock affects the volatility similarly to an
+adverse shock.
+
+Firstly, volatility is investigated where the annualised volatility, the
+rolling month estimates and predictive errors are shown. Secondly, the
+differentiated yields are calculated and shown graphically, followed by
+the autocorrelation results. Thirdly, the Univariate GARCH model is
+analysed, followed by the multivariate GARCH model. The Multivariate
+DCC-GARCH model is analysed, and the plots for covariance and
+correlation are done based on this.
+
+The GARCH: A Generalised Autoregressive Conditional Heteroskedasticity
+model is used to handle changing volatility in financial time series
+data. The equation below shows the popular GARCH form of the volatility
+process @tsay2005analysis. The equation means the current volatility is
+equal to the last day's volatility and the last day's return, with
+estimated parameters. This type of ARCH class of conditional volatility
+models allows heteroscedasticity in the regression. Heteroscedasticity
+is when the regression residual is not independent of the predictors.
+The DCC-GARCH is the Dynamic Conditional Correlation (DCC) GARCH model,
+and the DCC model estimates the correlation matrix directly through the
+use of standard residuals.
+
+```{=tex}
+\begin{equation}
+\sigma^2 = w + \alpha (\epsilon^2_{t-1} )    +    (\beta)  \sigma^2_{t-1}
+\label{eq1}
+\end{equation}
+```
+```{=tex}
+\begin{equation}
+r_{t} = \mu +  \epsilon_{t}
+\label{eq2}
+\end{equation}
+```
+```{=tex}
+\begin{equation}
+\epsilon_{t} = \sigma_{t} . z_{t}
+\label{eq3}
+\end{equation}
+```
+```{=tex}
+\begin{equation}
+\sigma^2 = \alpha + \beta_{1}\epsilon^2_{t-1} + \beta_{t}\sigma^2_{t-1}
+\label{eq4}
+\end{equation}
+```
+```{=tex}
+\begin{equation}
+ z_{t} = N (0,1)
+\label{eq5}
+\end{equation}
+```
+# [Analysis and Results]{.ul} \label{cd}
+
+# 1. Volatility \label{Volatility}
+
+## Annualised, rolling volatility and predictive errors
+
+The annualised volatility is calculated as the square root of each yield
+and the standard deviation. Figure 8 shows that the annualised
+volatility rate and the yields move in a similar pattern. There are
+periods of significant fluctuation, followed by periods of low
+variation. Figures 9 and 10 represent a visual of the time-variation in
+volatility. The assumption made here is that the number of trading days
+in a year equals 252 days. The one-month volatility is calculated as the
+standard deviation of the last 30 percentage changes in the bond yield
+multiplied by the square root of 252. From the figures, one notices that
+the standard volatility calculation shows high periods of volatility in
+the early 2000s and 2020s. This is later compared to the GARCH
+volatility, removing the noise. Figure 10 shows the absolute value of
+the prediction errors. The 3 months and 2 Year bond yields show high
+predictive errors during the crisis and pandemic.
+
+```{r av, fig.align='center', fig.cap=" Figure 8 Annualised volatility rate  \\label{av}", fig.height=3.7, fig.width=7}
+#annualized volatility 
+annual_vol <- sqrt(xts.SA_bonds) * sd(xts.SA_bonds)
+plot.xts(annual_vol, legend.loc = "topright", ylab = "Annualised volatility rate", grid.col = "white", main = "Annualized Volatility SA bonds")
+```
+
+```{r rv1, fig.align='center', fig.cap=" Figure 9 One month rolling volatility  \\label{rv1}", fig.height=3.7, fig.width=7}
+# Compute the rolling 1 month estimate of annualized volatility
+chart.RollingPerformance(R = xts.SA_bonds, width = 22,
+     FUN = "sd.annualized", scale = 252, main = "One month rolling volatility", legend.loc = "topleft") 
+```
+
+```{r rv2, fig.align='center', fig.cap="Figure 10 Three month rolling volatility  \\label{rv2}", fig.height=3.7, fig.width=7}
+# Compute the rolling 1 month estimate of annualized volatility
+chart.RollingPerformance(R = xts.SA_bonds, width = 66,
+     FUN = "sd.annualized", scale = 252, main = "Three month rolling volatility", legend.loc = "topleft") 
+```
+
+```{r}
+#Prediction errors
+m <- mean(xts.SA_bonds)
+# series of prediction errors
+e <- xts.SA_bonds - m
+```
+
+```{r pe, fig.align='center', fig.cap="Figure 11 The absolute value of the prediction errors  \\label{pe}", fig.height=3.7, fig.width=7}
+par(mfrow = c(1,1), mar = c(3,2,2,2))
+plot(abs(e), main = "The absolute value of the prediction errors", legend.loc = "topright", xlim = "bond yield", grid.col = "white" )
+```
+
+## Differentiated bond yields and autocorrelation
+
+Calculating the yield levels through "differentiation" allows us to make
+the time series independent of time. The calculation is the difference
+between the previous yield to the current yield. Figure 12 shows the
+yield changes by bond maturity date. One notes negative returns in the
+short term bond; much of the volatility clustering is seen in 2-year
+bonds during the early 2000s and 2020s. Volatility clustering is the
+behaviour of jagged peaks in the series. One notices periods of high and
+low volatility in the yield changes. The long term bond has mainly
+experienced positive change, and a negative dip is seen in the 2020s;
+this may have been due to the pandemic. Furthermore, short and mid-term
+are volatile mainly by observing the yield change; the 10-year bond
+holds its consistency over time.
+
+Figure 12 shows the yield changes in the bond. The graph shows that the
+direction (positive or negative) is independent of the previous day's
+returns. The magnitude of the return is similar to the previous day's
+return. It shows that the expected return will be similar to a turbulent
+tomorrow during a volatile market or crisis. Significant yield changes
+tend to happen close to each other. This is known as volatility
+clustering.
+
+To show this statistically, one can measure autocorrelation, which shows
+how the past depends on the future of a time series. If the
+autocorrelation is close to 1, the next day's value is close to today's
+value. However, if it is close to 0, the following day's value is
+unaffected by today's value. The Autocorrelation figure 13 shows that
+each spike that rises above or falls below the dashed lines is
+considered to be statistically significant. This means the spike has a
+value that is significantly different from zero. If a spike is
+significantly different from zero, that is evidence of autocorrelation.
+A spike that's close to zero is evidence against autocorrelation. The
+figure shows that most of the spikes are not statistically significant.
+This indicates that the yields are not highly correlated. The
+autocorrelation pattern of the data shows how an observation at time t
+is correlated to an observation at time t-k. Figure 13 represents the
+autocorrelogram; the blue dashed lines represent numerical limits for
+the statistical significance of correlation. The yields show high levels
+of autocorrelation for lags up to thirty. Additionally, to investigate
+the data further, the Box-Ljung test is conducted. The result rejects no
+ARCH effects; therefore, we need to account for the remaining
+conditional heteroskedasticity in the series by investigating the GARCH
+DCC-GARCH models in the sections that follow.
+
+```{r include = FALSE}
+# differentiate the time series 
+xts.SA_bonds_diff <- diff.xts(xts.SA_bonds)
+#Remove NA variable 
+xts.SA_bonds_diff <- xts.SA_bonds_diff[-c(1),]
+head(xts.SA_bonds_diff)
+```
+
+```{r dt, fig.align='center', fig.cap="Figure 12 South Africa's change in bond yields \\label{dt}", fig.height=5, fig.width=8}
+Yield.changes  <- xts.SA_bonds_diff
+plot.type1  <- "multiple"
+asset.names <- colnames(xts.SA_bonds_diff)
+#Plot SA.bonds 
+plot.zoo(x = Yield.changes, plot.type = plot.type1, xlab = "Date", col = rainbow(3), main = "South Africa's change in bond yields")  
+legend(x = "topright", legend = asset.names, cex = 0.45, lwd = 3, col = rainbow(3))
+```
+
+```{r at, fig.align='center', fig.cap="Figure 13 Autocorrelation for 3M, 2Yr, 10Yr bond yield changes respectively  \\label{at}", fig.height=3, fig.width=7}
+# Plot the autocorrelations of the yield changes
+par(mfrow=c(1,3))
+acf_3M <- acf(xts.SA_bonds$SA_3M, na.action = na.pass)
+acf_2Yr <- acf(xts.SA_bonds$ZA_2Yr, na.action = na.pass)
+acf_10Yr <- acf(xts.SA_bonds$ZA_10Yr, na.action = na.pass)
+mtext("Autocorrelation for 3M, 2Yr, 10Yr bond yield changes respectively", side = 3, line = -32, outer = TRUE)
+```
+
+# 2. The GARCH model \label{GARCH model}
+
+The above analysis show a presence of volatility clustering, given this,
+the GARCH model is presented to capture the expected variance of the
+residuals from another model.
+
+## Estimated Volatility and Residuals
+
+Figure 14 - 16 shows the estimated volatility and residuals from the
+GARCH model. The figures show periods of high volatility during the
+2007- 2009 periods and 2020. The 3 month and 2 year bond yields have
+residuals fluctuations whereas the 10 year bond yield is consistent
+showing little negative spikes.
+
+```{r v1, fig.align='center', fig.cap=" Figure 14 Estimated volatilities and residuals for ZA_3M  \\label{v1}", fig.height=3.7, fig.width=7}
+spec <- ugarchspec(distribution.model = "norm")
+fit_3M <- ugarchfit(xts.SA_bonds$SA_3M, spec = spec)
+# Save the volatilities and the rescaled residuals
+Volatilities_3M <- sigma(fit_3M)
+Residuals_3M <- scale(residuals(fit_3M, standardize = TRUE)) * sd(xts.SA_bonds$SA_3M) + mean(xts.SA_bonds$SA_3M)
+# Plot the yield changes with the estimated volatilities and residuals
+merge_1 <- merge.xts(xts.SA_bonds$SA_3M, Volatilities_3M, Residuals_3M)
+plot.xts(merge_1, main = "Estimated volatilities and residuals for ZA_3M", legend.loc = "topright", grid.col = "white", width = 20)
+```
+
+```{r v2, fig.align='center', fig.cap="Figure 15 Estimated volatilities and residuals for ZA_2YR  \\label{v2}", fig.height=3.7, fig.width=7}
+spec <- ugarchspec(distribution.model = "norm")
+fit_2Yr <- ugarchfit(xts.SA_bonds$ZA_2Yr, spec = spec)
+# Save the volatilities and the rescaled residuals
+volatilities_2Yr <- sigma(fit_2Yr)
+residuals_2Yr <- scale(residuals(fit_2Yr, standardize = TRUE)) * sd(xts.SA_bonds$ZA_2Yr) + mean(xts.SA_bonds$ZA_2Yr)
+merge_2 <- merge.xts(xts.SA_bonds$SA_3M, volatilities_2Yr, residuals_2Yr)
+plot.xts(merge_2, main = "Estimated volatilities and residuals for ZA_2YR", legend.loc = "topright", xlim = "bond yield", grid.col = "white", width = 20 )
+```
+
+```{r v3, fig.align='center', fig.cap="Figure 16 Estimated volatilities and residuals for ZA_10YR  \\label{v3}", fig.height=3.7, fig.width=7}
+spec <- ugarchspec(distribution.model = "norm")
+fit_10Yr <- ugarchfit(xts.SA_bonds$ZA_10Yr, spec = spec)
+# Save the volatilities and the rescaled residuals
+volatilities_10Yr <- sigma(fit_2Yr)
+residuals_10Yr <- scale(residuals(fit_10Yr, standardize = TRUE)) * sd(xts.SA_bonds$ZA_10Yr) + mean(xts.SA_bonds$ZA_10Yr)
+# Plot the yield changes with the estimated volatilities and residuals
+merge_3 <- merge.xts(xts.SA_bonds$ZA_10Yr, volatilities_10Yr, residuals_10Yr)
+plot.xts(merge_3, main = "Estimated volatilities and residuals for ZA_10YR", legend.loc = "topright", xlim = "bond yield", grid.col = "white", width = 20)
+```
+
+## GARCH model specification
+
+This is a standard GARCH (1,1); it does an excellent job dealing with
+second-order persistence. The weighted ARCH LM test works by regressing
+the squared errors on its lags and testing the hypothesis that all
+coefficients of the lagged regression are equal to zero. The Weighted
+ARCH LM tests show a high p-value. We do not reject the null hypothesis
+of no autocorrelation---the lower the p-value, the higher chance of
+finding the ARCH effect @perlin2020garch. Figure 13 showed high levels
+of autocorrelation. After implementing the GARCH, we have a lower
+p-value indicating that we do not reject the null hypothesis. The
+results of the GARCH model is found in the Appendix for all bond yield
+output.
+
+### 3 Month SA bond yields
+
+```{r}
+# Note specify the mean (mu) and variance (sigma) models separately:
+garch11 <-  ugarchspec(
+    
+    variance.model = list(model = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1], 
+                          
+    garchOrder = c(1, 1)), 
+    
+    mean.model = list(armaOrder = c(1, 0), include.mean = TRUE), 
+    
+    distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1])
+```
+
+```{r}
+garchfit1 = ugarchfit(spec = garch11, data = xts.SA_bonds$SA_3M) 
+```
+
+All coefficients are statistically significant. The mean equation is
+positive, implying that the 3-month bond yield is likely to have a
+positive return and increase its value in the long run. The sum of
+*alpha* and *beta* is 0.9664, less than 1 @perlin2020garch. The high
+values of the volatility parameters *alpha* and *beta* may reflect SA's
+economy, the high degree of uncertainty and shock propagation.
+Conditional Variance plot using GARCH sigma eliminates the unnecessary
+noise (Figure 17). The red line is the actual volatility representation.
+Figure 18 is a representation of all the GARCH plots.
+
+```{r include=FALSE}
+# Model coefficients.
+garchfit1@fit$matcoef 
+```
+
+```{r echo =  FALSE, results='asis'}
+kable(garchfit1@fit$matcoef, caption = "Model coefficients 3 Month")
+```
+
+```{r echo =  FALSE, results='asis'}
+ic <- infocriteria(garchfit1)
+kable(ic, caption = "Information criteria")
+```
+
+```{r}
+sigma <- sigma(garchfit1) %>% xts_tbl()
+colnames(sigma) <- c("date", "sigma")
+sigma <- sigma %>% mutate(date = as.Date(date))
+```
+
+```{r sg, fig.align='center', fig.cap="Figure 17 Sigma from GARCH 3M Bond  \\label{sg}", fig.height=3.7, fig.width=5}
+ggplot(sigma) +
+ aes(x = date, y = sigma) +
+ geom_line(size = 0.5, colour = "#EF562D") +
+ labs(x = "Date", 
+ y = "Volatility", title = "Sigma from GARCH 3M Bond") +
+ theme_classic()
+```
+
+```{r gp1, fig.align='center', fig.cap=" Figure 18 GARCH graph plots ZA_3M \\label{gp1}", fig.height=4, fig.width=10, warning = FALSE, message=FALSE}
+par(mar=c(1,1,1,1))
+plot(garchfit1, which = "all")
+```
+
+### 2 Year SA bond yields
+
+All coefficients are statistically significant. The mean equation is
+positive, implying that the 2-year bond yield is likely to have a
+positive return and increase its value in the long run. The sum of
+*alpha* and *beta* is 0.758, which is less than 1. The high values of
+the volatility parameters *alpha* and *beta* may reflect the SA's
+economy, the high degree of uncertainty and shock propagation.
+Conditional Variance plot using GARCH sigma eliminates the unnecessary
+noise (Figure 19); the red line is the actual volatility representation.
+Figure 20 is a representation of all the GARCH plots.
+
+```{r}
+garchfit2 = ugarchfit(spec = garch11, data = xts.SA_bonds$ZA_2Yr) 
+```
+
+```{r include= FALSE}
+garchfit2@fit$matcoef # Model coefficients.
+```
+
+```{r echo =  FALSE, results='asis'}
+kable(garchfit2@fit$matcoef, caption = "Model coefficients 2Year")
+```
+
+```{r echo =  FALSE, results='asis'}
+ic1 <- infocriteria(garchfit2)
+kable(ic1, caption = "Information criteria")
+```
+
+```{r}
+sigma1 <- sigma(garchfit2) %>% xts_tbl()
+colnames(sigma1) <- c("date", "sigma")
+sigma1 <- sigma1 %>% mutate(date = as.Date(date))
+```
+
+```{r sg1, fig.align='center', fig.cap="Figure 19 Sigma from GARCH 2yr \\label{sg1}", fig.height=3.7, fig.width=5}
+ggplot(sigma1) +
+ aes(x = date, y = sigma) +
+ geom_line(size = 0.5, colour = "#EF562D") +
+ labs(x = "Date", 
+ y = "Volatility", title = "Sigma from GARCH ZA_2Yr") +
+ theme_classic()
+```
+
+```{r gp2, fig.align='center', fig.cap="Figure 20 GARCH graph plots ZA_3M \\label{gp2}", fig.height=4, fig.width=10, warning=FALSE, message=FALSE}
+par(mar=c(1,1,1,1))
+plot(garchfit2, which = "all")
+```
+
+### 10 year SA bond yields
+
+All coefficients are statistically significant. The mean equation is
+positive, implying that the 10-year bond yield is likely to have a
+positive return and increase its value in the long run. The sum of
+*alpha* and *beta* is 0.949. This is less than 1. The high values of the
+volatility parameters *alpha* and *beta* may reflect the SA's economy,
+the high degree of uncertainty and shock propagation. Conditional
+Variance plot using GARCH sigma eliminates the unnecessary noise (Figure
+21); the red line is the actual volatility representation. Figure 22 is
+a representation of all the GARCH plots.
+
+```{r}
+garchfit3 = ugarchfit(spec = garch11, data = xts.SA_bonds$ZA_10Yr) 
+```
+
+```{r include=FALSE}
+garchfit3@fit$matcoef # Model coefficients.
+```
+
+```{r echo =  FALSE, results='asis'}
+kable(garchfit3@fit$matcoef, caption = "Model coefficients 10Year")
+```
+
+```{r echo =  FALSE, results='asis'}
+ic2 <- infocriteria(garchfit3)
+kable(ic2, caption = "Information criteria")
+```
+
+```{r}
+sigma2 <- sigma(garchfit3) %>% xts_tbl()
+colnames(sigma2) <- c("date", "sigma")
+sigma2 <- sigma2 %>% mutate(date = as.Date(date))
+```
+
+```{r sg2, fig.align='center', fig.cap="Figure 21 Sigma from GARCH 10Yr \\label{sg2}", fig.height=3.7, fig.width=5}
+ggplot(sigma2) +
+ aes(x = date, y = sigma) +
+ geom_line(size = 0.5, colour = "#EF562D") +
+ labs(x = "Date", 
+ y = "Volatility", title = "Sigma from GARCH ZA_10Yr") +
+ theme_classic()
+```
+
+```{r gp3, fig.align='center', fig.cap="Figure 22 GARCH graph plots ZA_10Yr \\label{gp3}", fig.height=4, fig.width=10, warning=FALSE, message=FALSE}
+par(mar=c(1,1,1,1))
+plot(garchfit3, which = "all")
+```
+
+# 3. The DCC-GARCH model \label{DCC-GARCH}
+
+The DCC-GARCH Model is based on the time-varying covariance and
+correlation matrices. The above analysis shows the Univariate GARCH
+models for each bond. We conduct a DCC-GARCH model to analyse
+multivariate to investigate covariance and correlation. The DCC model
+specification is a (1,1), then the covariance and correlation matrices
+are conducted. This is a three-dimensional object; the twoj ; dimensions
+have 3 elements each, and the third has 5715 elements. This means that
+5715 of the data is stored in a 3x3 matrix. The correlation and
+covariance plots are shown in Figures 23 and 24. The DCC GARCH Fit,
+dcca1 and dccb1 tell us how the correlations evolve autoregressively.
+dcca1 provides the contribution of the realised correlation matrix from
+the last period, while dccb1 contributes to a long-run correlation
+matrix that is due to all previous periods. The output shows that dccb1
+is significant.DCC fit output are found in the appendix. The forecast
+shows no correlation between the bond yields expect for the 3 month and
+10-year bond showing a slight correlation. The covariance between the 10
+year and 2 year bond is forecasted to be high.
+
+```{r}
+#estimate these univariate GARCH models using AR(1) GARCH(1,1) model and replicate the model 3 times because we have 3 year to maturity bonds. 
+uspec.n <- multispec(replicate(3, garch11))
+```
+
+```{r}
+#Estimate the univariate GARCH models using multifit command 
+multf <- multifit(uspec.n, xts.SA_bonds)
+```
+
+```{r}
+#This models the univariate volatilities as per uspec.n and the complex dynamic structure of the correlation matrix of dccorder c(1,1)
+spec1 <- dccspec(uspec = uspec.n, dccOrder = c(1, 1), distribution = 'mvnorm')
+```
+
+```{r}
+fit1 <-  dccfit(spec1, data = xts.SA_bonds, fit.control = list(eval.se =TRUE), fit = multf)
+```
+
+```{r include=FALSE}
+covariance1 <- rcov(fit1)
+dim(covariance1)
+correlation1 <- rcor(fit1)
+dim(correlation1)
+```
+
+```{r cov1, echo =  FALSE, results='asis', include= FALSE}
+covariance1[,,dim(covariance1)[3]]
+kable(ic2, caption = "Covariance matrix")
+```
+
+```{r cov2,  echo =  FALSE, results='asis', include= FALSE}
+correlation1[,,dim(correlation1)[3]]
+kable(ic2, caption = "Correlation matrix")
+```
+
+```{r cc1, fig.align='center', fig.cap="Figure 23 Correlation\\label{cc1}", fig.height=4, fig.width=7}
+par(mfrow=c(3,1))  # this creates a frame with 3 windows to be filled by plots
+plot(as.xts(correlation1[1,2,]),main="SA_3M and ZA_10Yr")
+plot(as.xts(correlation1[1,3,]),main="SA_3M and ZA_2Yr")
+plot(as.xts(correlation1[2,3,]),main="ZA_10Yr and ZA_2Yr")
+```
+
+```{r cc2, fig.align='center', fig.cap="Figure 24 Covariance \\label{cc2}", fig.height=4, fig.width=7}
+
+par(mfrow=c(3,1))  # this creates a frame with 3 windows to be filled by plots
+plot(as.xts(covariance1[1,2,]),main="SA_3M and ZA_10Yr")
+plot(as.xts(covariance1[1,3,]),main="SA_3M and ZA_2Yr")
+plot(as.xts(covariance1[2,3,]),main="ZA_10Yr and ZA_2Yr")
+```
+
+### DCC Forecast
+
+```{r}
+#Use the estimated model to produce forecast for the covariance or correlation matrix
+dccf1 <- dccforecast(fit1, n.ahead = 10)
+```
+
+```{r cc3, fig.align='center', fig.cap="Figure 25 DCC Series Unconditional Forecast \\label{cc3}", fig.height=5, fig.width=7}
+plot(dccf1, which=1, main = "DCC")
+```
+
+```{r cc4, fig.align='center', fig.cap="Figure 26 DCC Sigma Unconditional Forecast \\label{cc4}", fig.height=5, fig.width=7}
+plot(dccf1, which=2, size = 400, ax.lab = 1.9, 
+     cex.axes = 1, cex.main = 0.05, cex.sub = 2)
+```
+
+```{r cc5, fig.align='center', fig.cap="Figure 27 DCC Unconditional Covariance Forecast \\label{cc5}", fig.height=4, fig.width=10}
+plot(dccf1, which=3, cex.main = 0.05)
+```
+
+```{r cc6, fig.align='center', fig.cap="Figure 28 EW Forecast Portfolio with Unconditional limits \\label{cc6}", fig.height=4, fig.width=10}
+plot(dccf1, which= 5, main = "DCC ")
+```
+
+```{r cc9, fig.align='center', fig.cap="Figure 31 DCC Conditional Covariance \\label{cc9}", fig.height=3.7, fig.width=8}
+plot(fit1, which=3, series=c(1,2))
+```
+
+### Correlation and covariance forecast
+
+```{r}
+Rf <- dccf1@mforecast$R
+Hf <- dccf1@mforecast$H
+Qf <- dccf1@mforecast$Q
+Rbarf <- dccf1@mforecast$Rbar
+muf <- dccf1@mforecast$mu
+```
+
+```{r}
+corf_310 <- Rf[[1]][1,2,]  # Correlation forecasts between SA_3M and ZA_10Yr
+corf_32 <- Rf[[1]][1,3,]  # Correlation forecasts between SA_3M and ZA_2Yr
+corf_102 <- Rf[[1]][2,3,]  # Correlation forecasts between ZA_10Yr and ZA_2Yr
+```
+
+```{r}
+covf_310 <- Hf[[1]][1,2,]  # covariance forecasts between SA_3M and ZA_10Yr
+covf_32 <- Hf[[1]][1,3,]  # covariance forecasts between SA_3M and ZA_2Yr
+covf_102 <- Hf[[1]][2,3,]  # covariance forecasts between ZA_10Yr and ZA_2Yr
+```
+
+```{r cc7, fig.align='center', fig.cap="Figure 29 Sigma from GARCH 10Yr \\label{cc7}", fig.height=6, fig.width=7}
+par(mfrow=c(3,1))  # this creates a frame with 3 windows to be filled by plots
+c_310 <- c(tail(correlation1[1,2,],20),rep(NA,10))  # gets the last 20 correlation observations
+cf_310 <- c(rep(NA,20),corf_310) # gets the 10 forecasts
+plot(c_310,type = "l",main="Correlation SA_3M and ZA_10Yr")
+lines(cf_310,type = "l", col = "blue")
+
+c_32 <- c(tail(correlation1[1,3,],20),rep(NA,10))  # gets the last 20 correlation observations
+cf_32 <- c(rep(NA,20),corf_32) # gets the 10 forecasts
+plot(c_32,type = "l",main="Correlation SA_3M and ZA_2Yr")
+lines(cf_32,type = "l", col = "blue")
+
+c_102 <- c(tail(correlation1[2,3,],20),rep(NA,10))  # gets the last 20 correlation observations
+cf_102 <- c(rep(NA,20),corf_102) # gets the 10 forecasts
+plot(c_102,type = "l",main="Correlation ZA_10Yr and ZA_2Yr")
+lines(cf_102,type = "l", col = "blue")
+```
+
+```{r cc8, fig.align='center', fig.cap="Figure 30 Sigma from GARCH 10Yr \\label{cc8}", fig.height=6, fig.width=7}
+par(mfrow=c(3,1))  # this creates a frame with 3 windows to be filled by plots
+c_310 <- c(tail(covariance1[1,2,],20),rep(NA,10))  # gets the last 20 correlation observations
+cv_310 <- c(rep(NA,20),covf_310) # gets the 10 forecasts
+plot(c_310,type = "l",main="Covariance SA_3M and ZA_10Yr")
+lines(cv_310,type = "l", col = "blue")
+
+c_32 <- c(tail(covariance1[1,3,],20),rep(NA,10))  # gets the last 20 correlation observations
+cv_32 <- c(rep(NA,20),covf_32) # gets the 10 forecasts
+plot(c_32,type = "l",main="Covariance SA_3M and ZA_2Yr")
+lines(cv_32,type = "l", col = "blue")
+
+c_102 <- c(tail(covariance1[2,3,],20),rep(NA,10))  # gets the last 20 correlation observations
+cv_102 <- c(rep(NA,20),covf_102) # gets the 10 forecasts
+plot(c_102,type = "l",main="Covariance ZA_10Yr and ZA_2Yr")
+lines(cv_102,type = "l", col = "blue")
+```
+
+# [**Conclusion**]{.ul} \label{Conclusion}
+
+This paper offers a perspective on volatility modelling for the SA bond
+market. Furthermore, this research focused on modelling volatility using
+the GARCH and DCC-GARCH models. The main findings uncovered in the paper
+suggest that bond yields tend to cluster during high volatile periods.
+These periods include the financial crisis and COVID-19; yields during
+volatile periods face a higher dependence on the previous yields. The
+GARCH and DCC-GARCH models smoother volatilities over time.
+
+As such the bond market is significant for two reasons: it offers an
+extra income source and impacts consumer purchasing power. First, bond
+market volatility increases investor risk and affects SA's sovereign
+debt markets and portfolio management. Second, a turbulent economy has a
+detrimental effect on the bond market, reducing the government's
+capacity to service its debt. The paper's weakness is that it does not
+directly compare South Africa's volatility to other developed countries.
+Additional research may be conducted to model the volatilities in the US
+and the UK to establish an appropriate comparison. However, the figures
+indicate that developed country bond rates move similarly, although
+developing country bond yields tend to be higher. Therefore, further
+prediction and forecasting of the bond markets is necessary.
+
+\newpage
+
+# [**Appendix**]{.ul}\label{Appendix}
+
+```{r}
+garchfit1 = ugarchfit(spec = garch11, data = xts.SA_bonds$SA_3M) 
+garchfit1
+```
+
+```{r}
+garchfit2 = ugarchfit(spec = garch11, data = xts.SA_bonds$SA_3M) 
+garchfit2
+```
+
+```{r}
+garchfit3 = ugarchfit(spec = garch11, data = xts.SA_bonds$SA_3M) 
+garchfit3
+```
+
+```{r}
+#Estimate the univariate GARCH models using multifit command 
+multf <- multifit(uspec.n, xts.SA_bonds)
+multf
+```
+
+```{r}
+fit1 <-  dccfit(spec1, data = xts.SA_bonds, fit.control = list(eval.se =TRUE), fit = multf)
+fit1
+```
+
+```{r}
+#Use the estimated model to produce forecates for the covariance or correlation matrix
+dccf1 <- dccforecast(fit1, n.ahead = 10)
+dccf1
+```
+
+\newpage
+
+<!-- Make title of bibliography here: -->
+
+<!-- \newpage -->
+
+# [**References**]{.ul} \label{References}
