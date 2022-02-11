@@ -338,7 +338,7 @@ ggplot(data = SA_bonds, aes(x = date)) +
        subtitle = "Yield spreads relative to ZA_10Yr") + theme_economist_white()
 ```
 
-# [**Methodology** \label{Methodology}]{.ul}
+# [**Methodology**\label{Methodology}]{.ul}
 
 The GARCH model extends the (ARCH) Autoregressive Conditional
 Heteroskedasticity model. The GARCH model allows the variance to depend
